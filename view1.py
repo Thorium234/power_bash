@@ -1,11 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 
-class FinderView(ttk.Frame):
-    """
-    Refined, multi-tab, scrollable Tkinter view for Smart File Finder.
-    """
 
+class FinderView(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent)
         self.pack(fill="both", expand=True)
@@ -23,8 +20,13 @@ class FinderView(ttk.Frame):
 
         self.mode = tk.StringVar(value="ext")
 
-        ttk.Radiobutton(top, text="By Extension", variable=self.mode, value="ext").pack(side="left")
-        ttk.Radiobutton(top, text="By Name", variable=self.mode, value="name").pack(side="left", padx=(5, 10))
+        ttk.Radiobutton(
+            top, text="By Extension", variable=self.mode, value="ext"
+        ).pack(side="left")
+
+        ttk.Radiobutton(
+            top, text="By Name", variable=self.mode, value="name"
+        ).pack(side="left", padx=(5, 10))
 
         self.entry = ttk.Entry(top, width=35)
         self.entry.pack(side="left", padx=5)
@@ -56,15 +58,26 @@ class FinderView(ttk.Frame):
         self.open_folder_btn = ttk.Button(bottom, text="📁 Open Folder")
         self.open_folder_btn.pack(side="left", padx=5)
 
-        self.preview_canvas = tk.Canvas(bottom, width=240, height=240, bg="#1e1e1e", highlightthickness=1)
+        self.preview_canvas = tk.Canvas(
+            bottom, width=240, height=240, bg="#1e1e1e", highlightthickness=1
+        )
         self.preview_canvas.pack(side="right", padx=5)
 
     # ---------------- TAB MANAGEMENT ---------------- #
 
     def create_tab(self, title: str):
+        """
+        Create and activate a new search tab.
+        Returns: (frame, tree)
+        """
         frame = ttk.Frame(self.tabs)
 
-        tree = ttk.Treeview(frame, columns=("path",), show="headings", selectmode="browse")
+        tree = ttk.Treeview(
+            frame,
+            columns=("path",),
+            show="headings",
+            selectmode="browse",
+        )
         tree.heading("path", text="Full File Path")
         tree.column("path", anchor="w")
 
