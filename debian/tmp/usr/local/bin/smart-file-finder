@@ -12,7 +12,34 @@ import sys
 from finder import search_files
 from view import FinderView
 from utils import open_file, open_folder, preview_drawio, save_tabs, load_tabs
-from config import config
+
+# ---------------- CONFIG ---------------- #
+APP_NAME = "Smart File Finder Pro"
+HOME = Path.home()
+HISTORY_FILE = HOME / ".file_finder_history.json"
+THEME_FILE = HOME / ".file_finder_theme.json"
+MAX_HISTORY = 50
+
+SEARCH_SCOPES = {
+    "Home": HOME,
+    "Desktop": HOME / "Desktop",
+    "Projects": HOME / "Projects",
+}
+
+THEMES = {
+    "dark": {
+        "bg": "#2b2b2b",
+        "fg": "#e6e6e6",
+        "accent": "#4caf50",
+        "canvas": "#1e1e1e"
+    },
+    "light": {
+        "bg": "#f2f2f2",
+        "fg": "#222222",
+        "accent": "#007acc",
+        "canvas": "#dddddd"
+    }
+}
 
 
 # ---------------- SEARCH TASK ---------------- #
@@ -44,35 +71,17 @@ class SearchTask:
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        
-        # Get configuration
-        self.config = config
-        app_name = self.config.get('app.name', 'Smart File Finder Pro')
-        self.title(str(app_name))
-        
-        width = int(self.config.get('app.window_width', 1250))
-        height = int(self.config.get('app.window_height', 750))
-        min_w = int(self.config.get('app.min_width', 800))
-        min_h = int(self.config.get('app.min_height', 500))
-        
-        geometry = f"{width}x{height}"
-        self.geometry(geometry)
-        self.minsize(min_w, min_h)
-        self.maxsize(3000, 2000)  # Set a reasonable maximum size
-        
-        # Bind window resize events
-        self.bind("<Configure>", self.on_window_resize)
-        self.last_width = width
-        self.last_height = height
+        self.title(APP_NAME)
+        self.geometry("1250x750")
+        self.minsize(950, 600)
 
         # State
         self.queue = queue.Queue()
         self.active_task = None
         self.current_tree = None
         self.history = self.load_history()
-        self.theme_name = str(self.config.get('ui.theme', 'dark'))
-        self.theme = self.config.get_theme_colors(self.theme_name)
-        self.search_scopes = self.config.get_search_scopes()
+        self.theme_name = self.load_theme()
+        self.theme = THEMES[self.theme_name]
 
         # ----------------- STYLE ----------------- #
         self.style = ttk.Style(self)
@@ -81,7 +90,7 @@ class App(tk.Tk):
         # Configure frame styles
         self.style.configure("Finder.TFrame", background=self.theme["bg"])
         self.style.configure("Treeview", background=self.theme["bg"], fieldbackground=self.theme["bg"],
-                             foreground=self.theme["fg"], rowheight=self.config.get('ui.tree_row_height'))
+                             foreground=self.theme["fg"], rowheight=24)
         self.style.configure("Treeview.Heading", background=self.theme["accent"], foreground=self.theme["fg"])
         self.style.configure("TLabel", background=self.theme["bg"], foreground=self.theme["fg"])
         self.style.configure("TButton", background=self.theme["accent"], foreground=self.theme["fg"])
@@ -113,7 +122,7 @@ class App(tk.Tk):
     # ---------------- THEME TOGGLE ---------------- #
     def apply_theme(self):
         # Update theme colors
-        self.theme = self.config.get_theme_colors(self.theme_name)
+        self.theme = THEMES[self.theme_name]
 
         # Update frame styles
         self.style.configure("Finder.TFrame", background=self.theme["bg"])
@@ -128,17 +137,14 @@ class App(tk.Tk):
         self.view.preview_canvas.configure(bg=self.theme["canvas"])
 
     def toggle_theme(self):
-        themes = ["dark", "light", "blue"]
-        current_index = themes.index(self.theme_name) if self.theme_name in themes else 0
-        self.theme_name = themes[(current_index + 1) % len(themes)]
-        self.config.set('ui.theme', self.theme_name)
-        self.theme = self.config.get_theme_colors(self.theme_name)
+        self.theme_name = "light" if self.theme_name == "dark" else "dark"
+        self.theme = THEMES[self.theme_name]
         self.apply_theme()
+        self.save_theme()
 
     def setup_scope_selector(self):
         self.scope_var = tk.StringVar(value="Home")
-        scope_keys = list(self.search_scopes.keys())
-        menu = ttk.OptionMenu(self.view, self.scope_var, scope_keys[0] if scope_keys else "Home", *scope_keys)
+        menu = ttk.OptionMenu(self.view, self.scope_var, "Home", *SEARCH_SCOPES.keys())
         menu.pack(anchor="w", padx=12)
 
     def setup_clock(self):
@@ -158,18 +164,6 @@ class App(tk.Tk):
         self.bind("<Control-l>", lambda e: self.view.entry.focus())
         self.bind("<F5>", lambda e: self.refresh_tab())
         self.bind("<Control-d>", lambda e: self.toggle_theme())
-        self.bind("<Control-o>", lambda e: self.open_file())
-        self.bind("<Control-f>", lambda e: self.open_folder())
-        self.bind("<Escape>", lambda e: self.view.entry.delete(0, tk.END) if self.view.entry.focus_get() == self.view.entry else None)
-        self.bind("<Control-Tab>", lambda e: self.cycle_tabs(1))
-        self.bind("<Control-Shift-Tab>", lambda e: self.cycle_tabs(-1))
-        
-    def cycle_tabs(self, direction):
-        """Cycle through tabs in the given direction (1 for next, -1 for previous)"""
-        current = self.view.tabs.index(self.view.tabs.select())
-        total = self.view.tabs.index("end") + 1
-        new_index = (current + direction) % total
-        self.view.tabs.select(new_index)
 
     def setup_recent_activity(self):
         self.recent_listbox = tk.Listbox(self.view, height=10)
@@ -217,9 +211,8 @@ class App(tk.Tk):
         if self.active_task:
             self.active_task.cancel()
 
-        scope = self.search_scopes.get(self.scope_var.get(), self.config.get('paths.home'))
-        if self.current_tree:
-            self.current_tree.delete(*self.current_tree.get_children())
+        scope = SEARCH_SCOPES.get(self.scope_var.get(), HOME)
+        self.current_tree.delete(*self.current_tree.get_children())
 
         self.active_task = SearchTask(scope, self.view.mode.get(), query, self.queue)
         self.save_history(query)
@@ -229,13 +222,8 @@ class App(tk.Tk):
     def process_queue(self):
         try:
             while True:
-                file_info = self.queue.get_nowait()
-                if self.current_tree and isinstance(file_info, dict):
-                    self.current_tree.insert("", "end", values=(
-                        file_info.get('path', ''),
-                        file_info.get('size', ''),
-                        file_info.get('modified', '')
-                    ))
+                path = self.queue.get_nowait()
+                self.current_tree.insert("", "end", values=(path,))
         except queue.Empty:
             pass
 
@@ -246,10 +234,9 @@ class App(tk.Tk):
 
     # ---------------- ACTIONS ---------------- #
     def selected_path(self):
-        if self.current_tree:
-            sel = self.current_tree.selection()
-            if sel:
-                return self.current_tree.item(sel[0])["values"][0]  # First column is path
+        sel = self.current_tree.selection()
+        if sel:
+            return self.current_tree.item(sel[0])["values"][0]
         return None
 
     def open_file(self):
@@ -266,10 +253,9 @@ class App(tk.Tk):
 
     # ---------------- HISTORY ---------------- #
     def load_history(self):
-        history_file = self.config.get_cache_file('history.json')
-        if history_file.exists():
+        if HISTORY_FILE.exists():
             try:
-                return json.loads(history_file.read_text())
+                return json.loads(HISTORY_FILE.read_text())
             except Exception:
                 return []
         return []
@@ -278,50 +264,25 @@ class App(tk.Tk):
         if query in self.history:
             self.history.remove(query)
         self.history.insert(0, query)
-        max_history = self.config.get('app.max_history', 50)
-        self.history = self.history[:max_history]
-        
-        history_file = self.config.get_cache_file('history.json')
-        history_file.write_text(json.dumps(self.history, indent=2))
+        self.history = self.history[:MAX_HISTORY]
+        HISTORY_FILE.write_text(json.dumps(self.history, indent=2))
         self.refresh_recent_activity()
 
     def load_theme(self):
-        theme_file = self.config.config_file  # Theme is now stored in main config
-        return self.config.get('ui.theme', 'dark')
+        if THEME_FILE.exists():
+            try:
+                return json.loads(THEME_FILE.read_text())
+            except Exception:
+                return "dark"
+        return "dark"
 
     def save_theme(self):
-        self.config.set('ui.theme', self.theme_name)
+        THEME_FILE.write_text(json.dumps(self.theme_name))
 
-    # ---------------- WINDOW MANAGEMENT ---------------- #
-    def on_window_resize(self, event):
-        """Handle window resize events and save window size"""
-        # Only handle resize for the main window, not child widgets
-        if event.widget == self:
-            current_width = event.width
-            current_height = event.height
-            
-            # Save size if it's significantly different (avoid spam)
-            if abs(current_width - self.last_width) > 50 or abs(current_height - self.last_height) > 50:
-                self.config.set('app.window_width', current_width)
-                self.config.set('app.window_height', current_height)
-                self.last_width = current_width
-                self.last_height = current_height
-    
     # ---------------- EXIT ---------------- #
     def safe_exit(self):
         if self.active_task:
             self.active_task.cancel()
-        
-        # Save current window size
-        current_geometry = self.geometry()
-        if 'x' in current_geometry:
-            # Extract width and height from geometry string "widthxheight+x+y"
-            size_part = current_geometry.split('+')[0]
-            if 'x' in size_part:
-                width, height = map(int, size_part.split('x'))
-                self.config.set('app.window_width', width)
-                self.config.set('app.window_height', height)
-        
         self.destroy()
 
 

@@ -3,7 +3,8 @@ from tkinter import ttk
 
 class FinderView(ttk.Frame):
     """
-    Refined, multi-tab, scrollable Tkinter view for Smart File Finder.
+    Refined Tkinter view for Smart File Finder Pro
+    Supports multi-tab, scrollable treeviews, preview canvas, and recent activity sidebar
     """
 
     def __init__(self, parent):
@@ -22,9 +23,9 @@ class FinderView(ttk.Frame):
         top.pack(fill="x", padx=10, pady=6)
 
         self.mode = tk.StringVar(value="ext")
-
         ttk.Radiobutton(top, text="By Extension", variable=self.mode, value="ext").pack(side="left")
-        ttk.Radiobutton(top, text="By Name", variable=self.mode, value="name").pack(side="left", padx=(5, 10))
+        ttk.Radiobutton(top, text="By Name", variable=self.mode, value="name").pack(side="left", padx=(5,10))
+        ttk.Radiobutton(top, text="By Content", variable=self.mode, value="content").pack(side="left", padx=(5,10))
 
         self.entry = ttk.Entry(top, width=35)
         self.entry.pack(side="left", padx=5)
@@ -35,12 +36,12 @@ class FinderView(ttk.Frame):
         self.new_tab_btn = ttk.Button(top, text="➕ New Tab")
         self.new_tab_btn.pack(side="left", padx=5)
 
-        self.fav_btn = ttk.Button(top, text="⭐ Favorite")
+        self.fav_btn = ttk.Button(top, text="⭐ Theme Toggle")
         self.fav_btn.pack(side="left", padx=5)
 
     def _build_progress(self):
         self.progress = ttk.Progressbar(self, mode="indeterminate")
-        self.progress.pack(fill="x", padx=10, pady=(0, 5))
+        self.progress.pack(fill="x", padx=10, pady=(0,5))
 
     def _build_tabs(self):
         self.tabs = ttk.Notebook(self)
@@ -63,19 +64,34 @@ class FinderView(ttk.Frame):
 
     def create_tab(self, title: str):
         frame = ttk.Frame(self.tabs)
+        tree = ttk.Treeview(frame, columns=("path", "size", "modified"), show="headings", selectmode="browse")
+        tree.heading("path", text="File Path")
+        tree.heading("size", text="Size")
+        tree.heading("modified", text="Modified")
+        tree.column("path", anchor="w", width=400, minwidth=200)
+        tree.column("size", anchor="e", width=100, minwidth=80)
+        tree.column("modified", anchor="center", width=150, minwidth=120)
 
-        tree = ttk.Treeview(frame, columns=("path",), show="headings", selectmode="browse")
-        tree.heading("path", text="Full File Path")
-        tree.column("path", anchor="w")
+        # Make columns resizable
+        for col in tree["columns"]:
+            tree.heading(col, command=lambda c=col: self.sort_by_column(tree, c, False))
 
         scrollbar = ttk.Scrollbar(frame, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=scrollbar.set)
 
+        # Use pack for better resizing behavior
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         self.tabs.add(frame, text=title)
         self.tabs.select(frame)
-
         return frame, tree
+
+    def sort_by_column(self, tree, col, reverse):
+        """Sort tree contents by column"""
+        data = [(tree.set(child, col), child) for child in tree.get_children('')]
+        data.sort(reverse=reverse)
+        for index, (val, child) in enumerate(data):
+            tree.move(child, '', index)
+        tree.heading(col, command=lambda: self.sort_by_column(tree, col, not reverse))
 

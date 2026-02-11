@@ -1,0 +1,4 @@
+#!/bin/bash
+echo "Smart File Finder Pro installed successfully!"
+exit 0
+
